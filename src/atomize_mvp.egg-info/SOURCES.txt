@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/atomize_mvp/__init__.py
+src/atomize_mvp/__main__.py
+src/atomize_mvp/cli.py
+src/atomize_mvp/logging_utils.py
+src/atomize_mvp/paths.py
+src/atomize_mvp/runner.py
+src/atomize_mvp/schemas.py
+src/atomize_mvp.egg-info/PKG-INFO
+src/atomize_mvp.egg-info/SOURCES.txt
+src/atomize_mvp.egg-info/dependency_links.txt
+src/atomize_mvp.egg-info/requires.txt
+src/atomize_mvp.egg-info/top_level.txt
+tests/test_paths.py
