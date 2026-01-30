@@ -105,6 +105,16 @@ def _build_prompt(clean_text: str, title: str, lang: str) -> str:
     )
 
 
+def _extract_json_block(text: str) -> str:
+    if not text:
+        return text
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return text
+    return text[start : end + 1]
+
+
 def generate_content_blueprint(
     clean_text: str,
     title: str,
@@ -130,9 +140,10 @@ def generate_content_blueprint(
 
     for attempt in range(3):
         try:
-            data = json.loads(raw)
+            candidate = _extract_json_block(raw)
+            data = json.loads(candidate)
             blueprint = ContentBlueprint.model_validate(data)
-            return raw, blueprint, input_hash
+            return candidate, blueprint, input_hash
         except Exception as exc:  # noqa: BLE001
             if attempt >= 2:
                 raise
