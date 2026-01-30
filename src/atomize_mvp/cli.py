@@ -1,11 +1,13 @@
 import argparse
 import sys
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from atomize_mvp.logging_utils import configure_logging
 from atomize_mvp.runner import run_pipeline
+from atomize_mvp.web import main as web_main
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -87,6 +89,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable premium structured posters export",
     )
 
+    web_parser = subparsers.add_parser("web", help="Start Atomize web server")
+    web_parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    web_parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    web_parser.add_argument("--out", default="./out", help="Output folder root")
+
     return parser
 
 
@@ -129,4 +136,16 @@ def main() -> None:
             structured_theme=args.structured_theme,
             structured_only=args.structured_only,
             structured_premium=args.structured_premium,
+        )
+    elif args.command == "web":
+        out_root = Path(args.out).expanduser()
+        web_main(
+            [
+                "--host",
+                args.host,
+                "--port",
+                str(args.port),
+                "--out",
+                str(out_root),
+            ]
         )

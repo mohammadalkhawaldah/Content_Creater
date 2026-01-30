@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atomize Web</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Atomize</h1>
+      <p class="subtitle">Upload → Generate → Download</p>
+      <form id="job-form" class="card" enctype="multipart/form-data">
+        <label>Client
+          <input type="text" name="client" required value="Acme" />
+        </label>
+        <label>Title
+          <input type="text" name="title" required value="Kickoff" />
+        </label>
+        <label>File
+          <input type="file" name="file" required />
+        </label>
+        <div class="grid">
+          <label>Language
+            <select name="lang">
+              <option value="auto">Auto</option>
+              <option value="en">English</option>
+              <option value="ar">Arabic</option>
+            </select>
+          </label>
+          <label>Tone
+            <input type="text" name="tone" value="professional friendly" />
+          </label>
+        </div>
+        <div class="grid">
+          <label>LinkedIn
+            <input type="number" name="linkedin_count" value="20" />
+          </label>
+          <label>X Threads
+            <input type="number" name="x_count" value="10" />
+          </label>
+          <label>Blogs
+            <input type="number" name="blog_count" value="5" />
+          </label>
+          <label>IG Stories
+            <input type="number" name="ig_count" value="15" />
+          </label>
+        </div>
+        <div class="grid">
+          <label>
+            <input type="checkbox" name="ai_posters" />
+            AI Posters
+          </label>
+          <label>
+            <input type="checkbox" name="structured_posters" />
+            Structured Posters
+          </label>
+          <label>
+            <input type="checkbox" name="structured_premium" />
+            Premium Structured
+          </label>
+        </div>
+        <button type="submit">Generate</button>
+      </form>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

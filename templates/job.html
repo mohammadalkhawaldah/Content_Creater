@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atomize Job</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Job <span id="job-id"></span></h1>
+      <div id="status" class="card">Loading...</div>
+      <div class="actions">
+        <a id="download-link" class="button" href="#">Download ZIP</a>
+        <span id="folder-path"></span>
+      </div>
+
+      <section id="posts">
+        <h2>Posts</h2>
+        <div id="posts-tabs" class="tabs"></div>
+        <div id="posts-content"></div>
+      </section>
+
+      <section id="posters">
+        <h2>Posters</h2>
+        <div id="posters-content" class="grid gallery"></div>
+      </section>
+
+      <section id="docs">
+        <h2>Docs</h2>
+        <ul id="docs-list"></ul>
+      </section>
+    </main>
+    <script>
+      window.JOB_ID = "{{ job_id }}";
+    </script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

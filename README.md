@@ -22,6 +22,31 @@ pip install -e .
 python -m atomize_mvp run --input <path> --client <name> --title <title> --out <folder>
 ```
 
+## Web App (Phase 9)
+
+Start the local web server:
+
+```bash
+python -m atomize_mvp web --host 127.0.0.1 --port 8000 --out ./out
+```
+
+Open your browser at:
+```
+http://127.0.0.1:8000
+```
+
+The UI lets you upload audio/video/text, configure counts/tone/language, run a job, view results, and download a ZIP.
+
+### Results Location
+All outputs are stored under:
+```
+out/<client>/<title>/04_delivery/
+```
+
+### Troubleshooting (Windows)
+- If DOCX files are locked, close them and re-run.
+- If file paths are too long, move the repo closer to the drive root (e.g., `C:\Atomize`).
+
 ## Delivery folder structure (Phase 1)
 
 ```
