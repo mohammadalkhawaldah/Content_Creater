@@ -1,31 +1,74 @@
-async function postForm(form) {
+let currentUpload = null;
+
+function postForm(form) {
   const data = new FormData(form);
-  const resp = await fetch("/api/jobs", { method: "POST", body: data });
-  if (!resp.ok) {
-    const err = await resp.text();
-    alert(err);
-    return;
-  }
-  const payload = await resp.json();
-  window.location.href = `/jobs/${payload.id}`;
+  const progress = document.getElementById("upload-progress");
+  const label = document.getElementById("upload-label");
+  const cancelBtn = document.getElementById("upload-cancel");
+  const submitBtn = form.querySelector('button[type="submit"]');
+
+  progress.value = 0;
+  label.textContent = "0%";
+  cancelBtn.disabled = false;
+  submitBtn.disabled = true;
+
+  const xhr = new XMLHttpRequest();
+  currentUpload = xhr;
+  xhr.open("POST", "/api/jobs", true);
+  xhr.upload.onprogress = (event) => {
+    if (event.lengthComputable) {
+      const percent = Math.round((event.loaded / event.total) * 100);
+      progress.value = percent;
+      label.textContent = `${percent}%`;
+    }
+  };
+  xhr.onload = () => {
+    cancelBtn.disabled = true;
+    submitBtn.disabled = false;
+    if (xhr.status >= 200 && xhr.status < 300) {
+      const payload = JSON.parse(xhr.responseText);
+      window.location.href = `/jobs/${payload.id}`;
+    } else {
+      alert(xhr.responseText || "Upload failed.");
+    }
+  };
+  xhr.onerror = () => {
+    cancelBtn.disabled = true;
+    submitBtn.disabled = false;
+    alert("Upload failed.");
+  };
+  xhr.onabort = () => {
+    cancelBtn.disabled = true;
+    submitBtn.disabled = false;
+    label.textContent = "Canceled";
+  };
+  xhr.send(data);
 }
 
 async function pollJob(jobId) {
-  const statusEl = document.getElementById("status");
+  const statusEl = document.getElementById("status-text");
+  const progressEl = document.getElementById("job-progress");
   const folderEl = document.getElementById("folder-path");
   const downloadEl = document.getElementById("download-link");
 
   const resp = await fetch(`/api/jobs/${jobId}`);
   if (!resp.ok) return;
   const data = await resp.json();
-  statusEl.textContent = `${data.status} • ${data.current_step || "waiting"} • ${data.percent}%`;
+  if (statusEl) {
+    statusEl.textContent = `${data.status} | ${data.current_step || "waiting"} | ${data.percent}%`;
+  }
+  if (progressEl) {
+    progressEl.value = data.percent || 0;
+  }
   folderEl.textContent = `Folder: ${data.job_path}`;
   downloadEl.href = `/api/jobs/${jobId}/download`;
 
   if (data.status === "succeeded") {
     await loadResults(jobId);
   } else if (data.status === "failed") {
-    statusEl.textContent = `failed • ${data.error || "unknown error"}`;
+    if (statusEl) {
+      statusEl.textContent = `failed | ${data.error || "unknown error"}`;
+    }
   } else {
     setTimeout(() => pollJob(jobId), 3000);
   }
@@ -51,7 +94,13 @@ function renderPosts(drafts) {
       (drafts[key] || []).forEach((item) => {
         const div = document.createElement("div");
         div.className = "card";
-        div.innerHTML = `<strong>${item.id || ""}</strong><pre>${JSON.stringify(item, null, 2)}</pre>`;
+        const header = document.createElement("strong");
+        header.textContent = item.id || "";
+        const body = document.createElement("div");
+        body.className = "post-text";
+        body.textContent = JSON.stringify(item, null, 2);
+        div.appendChild(header);
+        div.appendChild(body);
         content.appendChild(div);
       });
     };
@@ -102,6 +151,13 @@ document.addEventListener("DOMContentLoaded", () => {
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       postForm(form);
+    });
+    const cancelBtn = document.getElementById("upload-cancel");
+    cancelBtn.addEventListener("click", () => {
+      if (currentUpload) {
+        currentUpload.abort();
+        currentUpload = null;
+      }
     });
   }
   if (window.JOB_ID) {

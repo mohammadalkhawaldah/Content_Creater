@@ -3,12 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <title>Atomize Job</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=2" />
   </head>
   <body>
     <main class="container">
       <h1>Job <span id="job-id"></span></h1>
-      <div id="status" class="card">Loading...</div>
+      <div id="status" class="card status-card">
+        <div class="status-row">
+          <strong>Status</strong>
+          <span id="status-text">Loading...</span>
+        </div>
+        <progress id="job-progress" value="0" max="100"></progress>
+      </div>
       <div class="actions">
         <a id="download-link" class="button" href="#">Download ZIP</a>
         <span id="folder-path"></span>
@@ -33,6 +39,6 @@
     <script>
       window.JOB_ID = "{{ job_id }}";
     </script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=2"></script>
   </body>
 </html>

@@ -118,6 +118,25 @@ def _stage_source(input_path: Path, tree: dict) -> Path:
     return dest
 
 
+def _snapshot_posters(tree: dict) -> None:
+    delivery_dir = tree["delivery"]
+    if not delivery_dir.exists():
+        return
+    poster_files = []
+    for folder in delivery_dir.glob("Posters*"):
+        if folder.is_dir() and folder.name != "Posters_All":
+            poster_files.extend(folder.rglob("*.png"))
+    if not poster_files:
+        return
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snapshot_root = delivery_dir / "Posters_All" / stamp
+    for path in poster_files:
+        rel = path.relative_to(delivery_dir)
+        target = snapshot_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+
+
 def run_pipeline(
     input_path: Path,
     client: str,
@@ -615,3 +634,5 @@ def run_pipeline(
             _fail_step(steps, "export_structured_posters_premium", str(exc))
             _save_steps(state_file, steps, run_file)
             raise
+
+    _snapshot_posters(tree)

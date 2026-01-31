@@ -59,7 +59,7 @@ def _read_steps_status(job_root: Path) -> dict:
         return {}
 
 
-def _infer_progress(steps: dict) -> tuple[str | None, int]:
+def _infer_progress(steps: dict) -> tuple[str | None, int, bool, bool]:
     order = [
         "init",
         "stage_source",
@@ -77,15 +77,20 @@ def _infer_progress(steps: dict) -> tuple[str | None, int]:
     ]
     completed = 0
     current = None
+    has_failed = False
+    has_running = False
     for step in order:
         status = steps.get(step, {}).get("status")
         if status == "done":
             completed += 1
         elif status == "running":
             current = step
+            has_running = True
             break
+        elif status == "failed":
+            has_failed = True
     percent = int((completed / max(len(order), 1)) * 100)
-    return current, percent
+    return current, percent, has_running, has_failed
 
 
 def get_job_status(out_root: Path, job_id: str) -> dict | None:
@@ -94,10 +99,17 @@ def get_job_status(out_root: Path, job_id: str) -> dict | None:
         if record.get("id") == job_id:
             job_root = Path(record["job_path"])
             steps = _read_steps_status(job_root)
-            current_step, percent = _infer_progress(steps)
+            current_step, percent, has_running, has_failed = _infer_progress(steps)
             record = {**record}
             record["current_step"] = current_step
             record["percent"] = percent
+            if record.get("status") == "running":
+                if has_failed:
+                    record["status"] = "failed"
+                    _update_registry(out_root, job_id, {"status": "failed"})
+                elif not has_running and percent == 100:
+                    record["status"] = "succeeded"
+                    _update_registry(out_root, job_id, {"status": "succeeded"})
             return record
     return None
 
