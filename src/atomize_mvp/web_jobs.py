@@ -125,6 +125,9 @@ def get_job_status(out_root: Path, job_id: str) -> dict | None:
                 elif not has_running and percent == 100:
                     record["status"] = "succeeded"
                     _update_registry(out_root, job_id, {"status": "succeeded"})
+            if record.get("status") == "succeeded":
+                record["percent"] = 100
+                record["current_step"] = "done"
             return record
     return None
 

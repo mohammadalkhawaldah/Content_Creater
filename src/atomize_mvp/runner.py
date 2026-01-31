@@ -124,7 +124,10 @@ def _snapshot_posters(tree: dict) -> None:
         return
     poster_files = []
     for folder in delivery_dir.glob("Posters*"):
-        if folder.is_dir() and folder.name != "Posters_All":
+        if (
+            folder.is_dir()
+            and folder.name not in {"Posters_All", "Posters_AI"}
+        ):
             poster_files.extend(folder.rglob("*.png"))
     if not poster_files:
         return
