@@ -6,6 +6,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from datetime import datetime, timezone
 
 from atomize_mvp.logging_utils import configure_logging
 from atomize_mvp.paths import build_delivery_root, delivery_tree
@@ -53,6 +54,20 @@ def _read_steps_status(job_root: Path) -> dict:
     steps_path = job_root / ".atomize" / "steps.json"
     if not steps_path.exists():
         return {}
+    marker = job_root / ".atomize" / "web_job.json"
+    if marker.exists():
+        try:
+            marker_data = json.loads(marker.read_text(encoding="utf-8"))
+            started_at = marker_data.get("started_at")
+            if started_at:
+                start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                steps_mtime = datetime.fromtimestamp(
+                    steps_path.stat().st_mtime, tz=timezone.utc
+                )
+                if steps_mtime < start_dt:
+                    return {}
+        except json.JSONDecodeError:
+            return {}
     try:
         return json.loads(steps_path.read_text(encoding="utf-8")).get("steps", {})
     except json.JSONDecodeError:
@@ -129,11 +144,28 @@ def create_job(
             continue
         path.mkdir(parents=True, exist_ok=True)
 
+    started_at = datetime.now(timezone.utc).isoformat()
+    web_marker = job_root / ".atomize" / "web_job.json"
+    web_marker.write_text(
+        json.dumps({"job_id": job_id, "started_at": started_at}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    steps_path = job_root / ".atomize" / "steps.json"
+    steps_path.write_text(json.dumps({"steps": {}}, indent=2, sort_keys=True), encoding="utf-8")
+    run_path = job_root / ".atomize" / "run.json"
+    if run_path.exists():
+        run_data = json.loads(run_path.read_text(encoding="utf-8"))
+    else:
+        run_data = {}
+    run_data.update({"job_id": job_id, "started_at": started_at})
+    run_path.write_text(json.dumps(run_data, indent=2, sort_keys=True), encoding="utf-8")
+
     record = {
         "id": job_id,
         "client": client,
         "title": title,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "started_at": started_at,
         "status": "queued",
         "job_path": str(job_root),
         "input_path": str(input_path),

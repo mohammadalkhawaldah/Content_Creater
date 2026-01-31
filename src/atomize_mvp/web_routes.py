@@ -101,7 +101,7 @@ def create_job_api(
         "x_count": x_count,
         "blog_count": blog_count,
         "ig_count": ig_count,
-        "ai_posters": ai_posters,
+        "ai_posters": False,
         "ai_poster_count": ai_poster_count,
         "structured_posters": structured_posters,
         "structured_count": structured_count,
