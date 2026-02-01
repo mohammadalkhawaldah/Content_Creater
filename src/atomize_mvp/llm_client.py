@@ -137,7 +137,7 @@ def generate_image_base64(prompt: str, model: str, size: str) -> str:
     response = client.responses.create(
         model=model,
         input=prompt,
-        tools=[{"type": "image_generation", "size": size}],
+        tools=[{"type": "image_generation", "model": "gpt-image-1-mini", "size": size}],
     )
     for output in response.output:
         if output.type == "image_generation_call":

@@ -88,6 +88,9 @@ def create_job_api(
     max_mb = int(os.environ.get("ATOMIZE_MAX_UPLOAD_MB", "1024"))
     _save_upload(file, target_path, max_mb * 1024 * 1024)
 
+    if structured_premium and not structured_posters:
+        structured_posters = True
+
     config = {
         "whisper_model": whisper_model,
         "language": language,
