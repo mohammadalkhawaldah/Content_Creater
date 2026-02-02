@@ -12,7 +12,7 @@ from atomize_mvp.paths import build_delivery_root
 from atomize_mvp.web_jobs import create_job, get_job_status
 from atomize_mvp.web_models import JobCreateResponse, JobResultsResponse, JobStatusResponse
 from atomize_mvp.web_results import build_results
-from atomize_mvp.web_zip import stream_zip
+from atomize_mvp.web_zip import stream_zip, stream_delivery_zip
 
 
 templates = Jinja2Templates(directory="templates")
@@ -163,7 +163,8 @@ def job_download(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found.")
     job_root = Path(record["job_path"])
     final_delivery = job_root / "04_delivery" / "Final Delivery"
-    target = final_delivery if final_delivery.exists() else job_root / "04_delivery"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     zip_name = f"Atomize_{record['client']}_{record['title']}_{timestamp}.zip"
-    return stream_zip(target, zip_name)
+    if final_delivery.exists():
+        return stream_delivery_zip(job_root, zip_name)
+    return stream_zip(job_root / "04_delivery", zip_name)
