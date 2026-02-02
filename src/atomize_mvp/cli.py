@@ -47,10 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="professional friendly",
         help="Drafts tone (default: professional friendly)",
     )
-    run_parser.add_argument("--linkedin-count", default=20, type=int, help="LinkedIn posts count")
-    run_parser.add_argument("--x-count", default=10, type=int, help="X threads count")
-    run_parser.add_argument("--blog-count", default=5, type=int, help="Blog outlines count")
-    run_parser.add_argument("--ig-count", default=15, type=int, help="IG stories count")
+    run_parser.add_argument("--linkedin-count", default=2, type=int, help="LinkedIn posts count")
+    run_parser.add_argument("--x-count", default=2, type=int, help="X threads count")
+    run_parser.add_argument("--blog-count", default=2, type=int, help="Blog outlines count")
+    run_parser.add_argument("--ig-count", default=2, type=int, help="IG stories count")
     run_parser.add_argument(
         "--ai-posters",
         action="store_true",
@@ -58,9 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--ai-poster-count",
-        default=5,
+        default=2,
         type=int,
-        help="Number of AI posters to generate (default: 5)",
+        help="Number of AI posters to generate (default: 2)",
     )
     run_parser.add_argument(
         "--structured-posters",
@@ -69,9 +69,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument(
         "--structured-count",
-        default=3,
+        default=2,
         type=int,
-        help="Number of structured posters to generate (default: 3)",
+        help="Number of structured posters to generate (default: 2)",
     )
     run_parser.add_argument(
         "--structured-theme",
