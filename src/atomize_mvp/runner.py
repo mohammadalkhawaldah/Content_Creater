@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import gc
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from atomize_mvp.schemas import ContentBlueprint, DraftsSchema
 from atomize_mvp.transcribe import (
     build_srt,
     build_transcript_text,
-    transcribe_audio,
+    transcribe_audio_stream,
     write_segments,
 )
 
@@ -90,6 +91,25 @@ def _ensure_dirs(tree: dict) -> None:
         if key == "root":
             continue
         path.mkdir(parents=True, exist_ok=True)
+
+
+def _cleanup_memory(label: str) -> None:
+    logger.info("Cleaning up memory after %s", label)
+    try:
+        import psutil  # type: ignore
+
+        rss = psutil.Process().memory_info().rss / (1024 * 1024)
+        logger.info("RSS memory after %s: %.1f MB", label, rss)
+    except Exception:
+        pass
+    gc.collect()
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        return
 
 
 def _outputs_exist(paths: list[Path]) -> bool:
@@ -201,6 +221,7 @@ def run_pipeline(
         transcript_outputs = [
             tree["transcripts"] / "transcript.txt",
             tree["transcripts"] / "segments.json",
+            tree["transcripts"] / "transcript.jsonl",
             tree["transcripts"] / "transcript.srt",
         ]
         if not _should_skip(steps, "transcribe", transcript_outputs, force):
@@ -209,6 +230,11 @@ def run_pipeline(
             try:
                 text = input_path.read_text(encoding="utf-8")
                 _write_txt_input_outputs(text, tree)
+                (tree["transcripts"] / "transcript.jsonl").write_text(
+                    json.dumps({"start": 0.0, "end": 0.0, "text": text}, ensure_ascii=False)
+                    + "\n",
+                    encoding="utf-8",
+                )
                 _finish_step(
                     steps,
                     "transcribe",
@@ -262,35 +288,29 @@ def run_pipeline(
         transcript_outputs = [
             tree["transcripts"] / "transcript.txt",
             tree["transcripts"] / "segments.json",
+            tree["transcripts"] / "transcript.jsonl",
             tree["transcripts"] / "transcript.srt",
         ]
         if not _should_skip(steps, "transcribe", transcript_outputs, force):
             logger.info("Running step transcribe")
             _start_step(steps, "transcribe")
             try:
-                segments, info = transcribe_audio(
-                    audio_path,
+                segment_count, info = transcribe_audio_stream(
+                    audio_path=audio_path,
                     model=whisper_model,
                     language=language,
                     device=device,
-                )
-                write_segments(tree["transcripts"] / "segments.json", segments)
-
-                transcript_text = build_transcript_text(segments)
-                (tree["transcripts"] / "transcript.txt").write_text(
-                    transcript_text, encoding="utf-8"
-                )
-
-                srt_content = build_srt(segments)
-                (tree["transcripts"] / "transcript.srt").write_text(
-                    srt_content, encoding="utf-8"
+                    transcript_path=tree["transcripts"] / "transcript.txt",
+                    segments_json_path=tree["transcripts"] / "segments.json",
+                    segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                    srt_path=tree["transcripts"] / "transcript.srt",
                 )
 
                 metadata = {
                     "model": whisper_model,
                     "language": info.get("language", language),
                     "device": device,
-                    "segments_count": len(segments),
+                    "segments_count": segment_count,
                 }
                 if info.get("duration") is not None:
                     metadata["input_duration"] = info["duration"]
@@ -298,6 +318,7 @@ def run_pipeline(
                 _finish_step(steps, "transcribe", metadata)
                 _save_steps(state_file, steps, run_file)
                 logger.info("Step transcribe complete")
+                _cleanup_memory("transcribe")
             except Exception as exc:  # noqa: BLE001
                 _fail_step(steps, "transcribe", str(exc))
                 _save_steps(state_file, steps, run_file)
@@ -532,6 +553,7 @@ def run_pipeline(
             )
             _save_steps(state_file, steps, run_file)
             logger.info("Step export_posters complete")
+            _cleanup_memory("export_posters")
         except Exception as exc:  # noqa: BLE001
             _fail_step(steps, "export_posters", str(exc))
             _save_steps(state_file, steps, run_file)
@@ -596,6 +618,7 @@ def run_pipeline(
             )
             _save_steps(state_file, steps, run_file)
             logger.info("Step export_structured_posters complete")
+            _cleanup_memory("export_structured_posters")
         except Exception as exc:  # noqa: BLE001
             _fail_step(steps, "export_structured_posters", str(exc))
             _save_steps(state_file, steps, run_file)
@@ -633,9 +656,11 @@ def run_pipeline(
             )
             _save_steps(state_file, steps, run_file)
             logger.info("Step export_structured_posters_premium complete")
+            _cleanup_memory("export_structured_posters_premium")
         except Exception as exc:  # noqa: BLE001
             _fail_step(steps, "export_structured_posters_premium", str(exc))
             _save_steps(state_file, steps, run_file)
             raise
 
     _snapshot_posters(tree)
+    _cleanup_memory("pipeline")

@@ -4,29 +4,76 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 
 
-def transcribe_audio(
-    audio_path: Path, model: str, language: str, device: str
-) -> tuple[list[dict], dict]:
+def transcribe_audio_stream(
+    audio_path: Path,
+    model: str,
+    language: str,
+    device: str,
+    transcript_path: Path,
+    segments_json_path: Path,
+    segments_jsonl_path: Path,
+    srt_path: Path,
+) -> tuple[int, dict]:
     whisper = WhisperModel(model, device=device)
     segments_iter, info = whisper.transcribe(
         str(audio_path),
         language=None if language == "auto" else language,
         vad_filter=True,
     )
-    segments = []
-    for segment in segments_iter:
-        segments.append(
-            {
+
+    segment_count = 0
+    last_end = None
+    chunk: list[str] = []
+    first = True
+
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with (
+        transcript_path.open("w", encoding="utf-8") as transcript_file,
+        segments_json_path.open("w", encoding="utf-8") as segments_file,
+        segments_jsonl_path.open("w", encoding="utf-8") as jsonl_file,
+        srt_path.open("w", encoding="utf-8") as srt_file,
+    ):
+        segments_file.write("[\n")
+        for segment in segments_iter:
+            payload = {
                 "start": float(segment.start),
                 "end": float(segment.end),
                 "text": segment.text.strip(),
             }
-        )
+            segment_count += 1
+
+            if not first:
+                segments_file.write(",\n")
+            first = False
+            segments_file.write(json.dumps(payload, ensure_ascii=False))
+            jsonl_file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+            chunk.append(payload["text"])
+            gap = None if last_end is None else payload["start"] - last_end
+            if gap is not None and gap >= 1.0:
+                transcript_file.write(" ".join(chunk).strip() + "\n\n")
+                chunk = []
+            elif segment_count % 4 == 0:
+                transcript_file.write(" ".join(chunk).strip() + "\n\n")
+                chunk = []
+            last_end = payload["end"]
+
+            start = _format_timestamp(payload["start"])
+            end = _format_timestamp(payload["end"])
+            srt_file.write(f"{segment_count}\n{start} --> {end}\n{payload['text']}\n\n")
+
+        if chunk:
+            transcript_file.write(" ".join(chunk).strip() + "\n")
+
+        segments_file.write("\n]\n")
+
     info_dict = {
         "language": getattr(info, "language", None),
         "duration": getattr(info, "duration", None),
     }
-    return segments, info_dict
+    del whisper
+    return segment_count, info_dict
 
 
 def write_segments(path: Path, segments: list[dict]) -> None:

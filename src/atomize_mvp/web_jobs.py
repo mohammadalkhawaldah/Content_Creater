@@ -6,7 +6,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from atomize_mvp.logging_utils import configure_logging
 from atomize_mvp.paths import build_delivery_root, delivery_tree
@@ -27,7 +27,23 @@ def load_registry(out_root: Path) -> list[dict]:
     path = _registry_path(out_root)
     if not path.exists():
         return []
-    return json.loads(path.read_text(encoding="utf-8"))
+    records = json.loads(path.read_text(encoding="utf-8"))
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=60)
+    filtered: list[dict] = []
+    for record in records:
+        status = record.get("status")
+        finished_at = record.get("finished_at")
+        if status in {"succeeded", "failed"} and finished_at:
+            try:
+                finished_dt = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+                if finished_dt < cutoff:
+                    continue
+            except ValueError:
+                pass
+        filtered.append(record)
+    if len(filtered) != len(records):
+        save_registry(out_root, filtered)
+    return filtered
 
 
 def save_registry(out_root: Path, records: list[dict]) -> None:
@@ -216,6 +232,18 @@ def _run_job(out_root: Path, job_id: str, config: dict[str, Any]) -> None:
             structured_only=False,
             structured_premium=config["structured_premium"],
         )
-        _update_registry(out_root, job_id, {"status": "succeeded"})
+        _update_registry(
+            out_root,
+            job_id,
+            {"status": "succeeded", "finished_at": datetime.now(timezone.utc).isoformat()},
+        )
     except Exception as exc:  # noqa: BLE001
-        _update_registry(out_root, job_id, {"status": "failed", "error": str(exc)})
+        _update_registry(
+            out_root,
+            job_id,
+            {
+                "status": "failed",
+                "error": str(exc),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
