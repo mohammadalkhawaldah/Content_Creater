@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--log-level", default="INFO", help="Logging level (default: INFO)")
     default_whisper = os.environ.get("ATOMIZE_WHISPER_MODEL")
     if not default_whisper:
-        default_whisper = "base" if os.environ.get("RENDER") else "small"
+        default_whisper = "tiny" if os.environ.get("RENDER") else "small"
     run_parser.add_argument(
         "--whisper-model",
         default=default_whisper,

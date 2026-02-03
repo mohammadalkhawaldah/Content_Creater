@@ -11,6 +11,7 @@ def transcribe_audio_stream(
     model: str,
     language: str,
     device: str,
+    vad_filter: bool,
     transcript_path: Path,
     segments_json_path: Path,
     segments_jsonl_path: Path,
@@ -20,7 +21,7 @@ def transcribe_audio_stream(
     segments_iter, info = whisper.transcribe(
         str(audio_path),
         language=None if language == "auto" else language,
-        vad_filter=True,
+        vad_filter=vad_filter,
     )
 
     segment_count = 0
@@ -83,6 +84,7 @@ def _transcribe_worker(
     model: str,
     language: str,
     device: str,
+    vad_filter: bool,
     transcript_path: str,
     segments_json_path: str,
     segments_jsonl_path: str,
@@ -94,6 +96,7 @@ def _transcribe_worker(
         model=model,
         language=language,
         device=device,
+        vad_filter=vad_filter,
         transcript_path=Path(transcript_path),
         segments_json_path=Path(segments_json_path),
         segments_jsonl_path=Path(segments_jsonl_path),
@@ -108,6 +111,7 @@ def transcribe_audio_subprocess(
     model: str,
     language: str,
     device: str,
+    vad_filter: bool,
     transcript_path: Path,
     segments_json_path: Path,
     segments_jsonl_path: Path,
@@ -122,6 +126,7 @@ def transcribe_audio_subprocess(
             model,
             language,
             device,
+            vad_filter,
             str(transcript_path),
             str(segments_json_path),
             str(segments_jsonl_path),

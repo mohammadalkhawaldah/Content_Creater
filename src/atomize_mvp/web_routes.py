@@ -63,7 +63,7 @@ def create_job_api(
     whisper_model: str = Form(
         os.environ.get(
             "ATOMIZE_WHISPER_MODEL",
-            "base" if os.environ.get("RENDER") else "small",
+            "tiny" if os.environ.get("RENDER") else "small",
         )
     ),
     language: str = Form("auto"),

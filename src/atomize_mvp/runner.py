@@ -300,12 +300,18 @@ def run_pipeline(
                 use_subprocess = os.environ.get("ATOMIZE_TRANSCRIBE_SUBPROCESS") == "1"
                 if os.environ.get("RENDER"):
                     use_subprocess = True
+                vad_env = os.environ.get("ATOMIZE_WHISPER_VAD")
+                if vad_env is None:
+                    vad_filter = False if os.environ.get("RENDER") else True
+                else:
+                    vad_filter = vad_env.strip().lower() in {"1", "true", "yes", "on"}
                 if use_subprocess:
                     segment_count, info = transcribe_audio_subprocess(
                         audio_path=audio_path,
                         model=whisper_model,
                         language=language,
                         device=device,
+                        vad_filter=vad_filter,
                         transcript_path=tree["transcripts"] / "transcript.txt",
                         segments_json_path=tree["transcripts"] / "segments.json",
                         segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
@@ -318,6 +324,7 @@ def run_pipeline(
                         model=whisper_model,
                         language=language,
                         device=device,
+                        vad_filter=vad_filter,
                         transcript_path=tree["transcripts"] / "transcript.txt",
                         segments_json_path=tree["transcripts"] / "segments.json",
                         segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
