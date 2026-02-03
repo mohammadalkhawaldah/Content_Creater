@@ -28,6 +28,7 @@ from atomize_mvp.transcribe import (
     build_srt,
     build_transcript_text,
     transcribe_audio_stream,
+    transcribe_audio_subprocess,
     write_segments,
 )
 
@@ -295,16 +296,33 @@ def run_pipeline(
             logger.info("Running step transcribe")
             _start_step(steps, "transcribe")
             try:
-                segment_count, info = transcribe_audio_stream(
-                    audio_path=audio_path,
-                    model=whisper_model,
-                    language=language,
-                    device=device,
-                    transcript_path=tree["transcripts"] / "transcript.txt",
-                    segments_json_path=tree["transcripts"] / "segments.json",
-                    segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
-                    srt_path=tree["transcripts"] / "transcript.srt",
-                )
+                info_path = tree["transcripts"] / "transcribe_info.json"
+                use_subprocess = os.environ.get("ATOMIZE_TRANSCRIBE_SUBPROCESS") == "1"
+                if os.environ.get("RENDER"):
+                    use_subprocess = True
+                if use_subprocess:
+                    segment_count, info = transcribe_audio_subprocess(
+                        audio_path=audio_path,
+                        model=whisper_model,
+                        language=language,
+                        device=device,
+                        transcript_path=tree["transcripts"] / "transcript.txt",
+                        segments_json_path=tree["transcripts"] / "segments.json",
+                        segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                        srt_path=tree["transcripts"] / "transcript.srt",
+                        info_path=info_path,
+                    )
+                else:
+                    segment_count, info = transcribe_audio_stream(
+                        audio_path=audio_path,
+                        model=whisper_model,
+                        language=language,
+                        device=device,
+                        transcript_path=tree["transcripts"] / "transcript.txt",
+                        segments_json_path=tree["transcripts"] / "segments.json",
+                        segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                        srt_path=tree["transcripts"] / "transcript.srt",
+                    )
 
                 metadata = {
                     "model": whisper_model,

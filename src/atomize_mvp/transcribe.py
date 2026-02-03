@@ -1,5 +1,7 @@
 import json
+import os
 from pathlib import Path
+from multiprocessing import get_context
 
 from faster_whisper import WhisperModel
 
@@ -74,6 +76,65 @@ def transcribe_audio_stream(
     }
     del whisper
     return segment_count, info_dict
+
+
+def _transcribe_worker(
+    audio_path: str,
+    model: str,
+    language: str,
+    device: str,
+    transcript_path: str,
+    segments_json_path: str,
+    segments_jsonl_path: str,
+    srt_path: str,
+    info_path: str,
+) -> None:
+    segment_count, info = transcribe_audio_stream(
+        audio_path=Path(audio_path),
+        model=model,
+        language=language,
+        device=device,
+        transcript_path=Path(transcript_path),
+        segments_json_path=Path(segments_json_path),
+        segments_jsonl_path=Path(segments_jsonl_path),
+        srt_path=Path(srt_path),
+    )
+    payload = {"segments_count": segment_count, "info": info}
+    Path(info_path).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def transcribe_audio_subprocess(
+    audio_path: Path,
+    model: str,
+    language: str,
+    device: str,
+    transcript_path: Path,
+    segments_json_path: Path,
+    segments_jsonl_path: Path,
+    srt_path: Path,
+    info_path: Path,
+) -> tuple[int, dict]:
+    ctx = get_context("spawn")
+    proc = ctx.Process(
+        target=_transcribe_worker,
+        args=(
+            str(audio_path),
+            model,
+            language,
+            device,
+            str(transcript_path),
+            str(segments_json_path),
+            str(segments_jsonl_path),
+            str(srt_path),
+            str(info_path),
+        ),
+    )
+    proc.start()
+    proc.join()
+    if proc.exitcode != 0:
+        raise RuntimeError("Transcription subprocess failed.")
+    data = json.loads(info_path.read_text(encoding="utf-8"))
+    return int(data.get("segments_count", 0)), data.get("info", {})
 
 
 def write_segments(path: Path, segments: list[dict]) -> None:

@@ -21,8 +21,13 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--out", required=True, help="Output folder root")
     run_parser.add_argument("--force", action="store_true", help="Re-run completed steps")
     run_parser.add_argument("--log-level", default="INFO", help="Logging level (default: INFO)")
+    default_whisper = os.environ.get("ATOMIZE_WHISPER_MODEL")
+    if not default_whisper:
+        default_whisper = "base" if os.environ.get("RENDER") else "small"
     run_parser.add_argument(
-        "--whisper-model", default="small", help="faster-whisper model (default: small)"
+        "--whisper-model",
+        default=default_whisper,
+        help=f"faster-whisper model (default: {default_whisper})",
     )
     run_parser.add_argument(
         "--language", default="auto", help="Language code or auto (default: auto)"

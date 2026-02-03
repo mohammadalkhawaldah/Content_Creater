@@ -60,7 +60,12 @@ def create_job_api(
     title: str = Form(...),
     lang: str = Form("auto"),
     tone: str = Form("professional friendly"),
-    whisper_model: str = Form("small"),
+    whisper_model: str = Form(
+        os.environ.get(
+            "ATOMIZE_WHISPER_MODEL",
+            "base" if os.environ.get("RENDER") else "small",
+        )
+    ),
     language: str = Form("auto"),
     device: str = Form("cpu"),
     model: str = Form("gpt-4o-mini"),
