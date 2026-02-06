@@ -16,8 +16,8 @@ from atomize_mvp.delivery import (
     write_linkedin_docx,
     write_x_threads_docx,
 )
-from atomize_mvp.drafts import generate_all_drafts, write_drafts_json
-from atomize_mvp.ffmpeg_utils import convert_to_mp4, ensure_ffmpeg
+from atomize_mvp.drafts import generate_all_drafts, generate_quick_bundle, write_drafts_json
+from atomize_mvp.ffmpeg_utils import convert_to_mp4, ensure_ffmpeg, split_audio
 from atomize_mvp.finalize import finalize_delivery
 from atomize_mvp.paths import build_delivery_root, delivery_tree
 from atomize_mvp.structured_posters import export_structured_posters, generate_visual_blueprints
@@ -29,6 +29,9 @@ from atomize_mvp.transcribe import (
     build_transcript_text,
     transcribe_audio_stream,
     transcribe_audio_subprocess,
+    transcribe_audio_chunks,
+    transcribe_audio_chunks_subprocess,
+    transcribe_audio_chunks_parallel,
     write_segments,
 )
 
@@ -113,6 +116,47 @@ def _cleanup_memory(label: str) -> None:
         return
 
 
+def _hash_file(path: Path) -> str:
+    import hashlib
+
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _cache_root(out_root: Path, input_hash: str) -> Path:
+    return out_root / ".atomize_cache" / input_hash
+
+
+def _cache_transcripts(cache_root: Path, tree: dict) -> None:
+    cache_root.mkdir(parents=True, exist_ok=True)
+    for name in ["transcript.txt", "transcript.srt", "transcript.jsonl", "segments.json", "clean_transcript.txt"]:
+        src = tree["transcripts"] / name
+        if src.exists():
+            shutil.copy2(src, cache_root / name)
+
+
+def _maybe_restore_cached_transcripts(cache_root: Path, tree: dict) -> bool:
+    cached = [
+        cache_root / "transcript.txt",
+        cache_root / "transcript.srt",
+        cache_root / "transcript.jsonl",
+        cache_root / "segments.json",
+        cache_root / "clean_transcript.txt",
+    ]
+    if not all(path.exists() for path in cached):
+        return False
+    tree["transcripts"].mkdir(parents=True, exist_ok=True)
+    for path in cached:
+        shutil.copy2(path, tree["transcripts"] / path.name)
+    return True
+
+
 def _outputs_exist(paths: list[Path]) -> bool:
     return all(path.exists() for path in paths)
 
@@ -186,6 +230,7 @@ def run_pipeline(
     structured_theme: str,
     structured_only: bool,
     structured_premium: bool,
+    mode: str = "full",
 ) -> None:
     root = build_delivery_root(out_root, client, title)
     tree = delivery_tree(root)
@@ -194,6 +239,21 @@ def run_pipeline(
 
     _ensure_dirs(tree)
     steps = _load_steps(state_file)
+    is_quick = mode.lower() == "quick"
+    is_offline = os.environ.get("ATOMIZE_OFFLINE") == "1"
+    if is_offline:
+        is_quick = True
+    if is_quick:
+        structured_posters = False
+        structured_premium = False
+        ai_posters = False
+
+    input_hash = _hash_file(input_path)
+    run_data = _load_json(run_file, {})
+    run_data["input_hash"] = input_hash
+    run_data["mode"] = "quick" if is_quick else "full"
+    _save_json(run_file, run_data)
+    cache_root = _cache_root(out_root, input_hash)
 
     if not _step_done(steps, "init") or force:
         logger.info("Running step init")
@@ -204,6 +264,7 @@ def run_pipeline(
             "input": str(input_path),
             "created_at": _now_iso(),
             "phase": "phase_8",
+            "mode": "quick" if is_quick else "full",
         }
         _save_json(run_file, meta)
         _finish_step(steps, "init")
@@ -305,31 +366,94 @@ def run_pipeline(
                     vad_filter = False if os.environ.get("RENDER") else True
                 else:
                     vad_filter = vad_env.strip().lower() in {"1", "true", "yes", "on"}
-                if use_subprocess:
-                    segment_count, info = transcribe_audio_subprocess(
-                        audio_path=audio_path,
-                        model=whisper_model,
-                        language=language,
-                        device=device,
-                        vad_filter=vad_filter,
-                        transcript_path=tree["transcripts"] / "transcript.txt",
-                        segments_json_path=tree["transcripts"] / "segments.json",
-                        segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
-                        srt_path=tree["transcripts"] / "transcript.srt",
-                        info_path=info_path,
-                    )
+                if not force and _maybe_restore_cached_transcripts(cache_root, tree):
+                    logger.info("Cache hit for transcripts: %s", cache_root)
+                    segment_count = 0
+                    info = {}
                 else:
-                    segment_count, info = transcribe_audio_stream(
-                        audio_path=audio_path,
-                        model=whisper_model,
-                        language=language,
-                        device=device,
-                        vad_filter=vad_filter,
-                        transcript_path=tree["transcripts"] / "transcript.txt",
-                        segments_json_path=tree["transcripts"] / "segments.json",
-                        segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
-                        srt_path=tree["transcripts"] / "transcript.srt",
-                    )
+                    segment_seconds = int(os.environ.get("ATOMIZE_CHUNK_SECONDS", "90"))
+                    chunk_dir = tree["transcripts"] / "chunks"
+                    chunks: list[Path] = []
+                    if segment_seconds > 0:
+                        chunk_dir.mkdir(parents=True, exist_ok=True)
+                        chunks = split_audio(audio_path, chunk_dir, segment_seconds)
+                    parallel_env = os.environ.get("ATOMIZE_TRANSCRIBE_PARALLEL")
+                    if parallel_env is None:
+                        parallel = False if os.environ.get("RENDER") else True
+                    else:
+                        parallel = parallel_env.strip().lower() in {"1", "true", "yes", "on"}
+                    workers = os.cpu_count() or 2
+                    workers = max(1, workers // 2)
+                    workers = min(2, workers)
+                    workers = int(os.environ.get("ATOMIZE_TRANSCRIBE_WORKERS", workers))
+                    if chunks:
+                        if parallel:
+                            segment_count, info = transcribe_audio_chunks_parallel(
+                                chunks=chunks,
+                                model=whisper_model,
+                                language=language,
+                                device=device,
+                                vad_filter=vad_filter,
+                                transcript_path=tree["transcripts"] / "transcript.txt",
+                                segments_json_path=tree["transcripts"] / "segments.json",
+                                segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                                srt_path=tree["transcripts"] / "transcript.srt",
+                                segment_seconds=segment_seconds,
+                                max_workers=workers,
+                            )
+                        elif use_subprocess:
+                            segment_count, info = transcribe_audio_chunks_subprocess(
+                                chunks=chunks,
+                                model=whisper_model,
+                                language=language,
+                                device=device,
+                                vad_filter=vad_filter,
+                                transcript_path=tree["transcripts"] / "transcript.txt",
+                                segments_json_path=tree["transcripts"] / "segments.json",
+                                segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                                srt_path=tree["transcripts"] / "transcript.srt",
+                                info_path=info_path,
+                                segment_seconds=segment_seconds,
+                            )
+                        else:
+                            segment_count, info = transcribe_audio_chunks(
+                                chunks=chunks,
+                                model=whisper_model,
+                                language=language,
+                                device=device,
+                                vad_filter=vad_filter,
+                                transcript_path=tree["transcripts"] / "transcript.txt",
+                                segments_json_path=tree["transcripts"] / "segments.json",
+                                segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                                srt_path=tree["transcripts"] / "transcript.srt",
+                                segment_seconds=segment_seconds,
+                            )
+                    else:
+                        if use_subprocess:
+                            segment_count, info = transcribe_audio_subprocess(
+                                audio_path=audio_path,
+                                model=whisper_model,
+                                language=language,
+                                device=device,
+                                vad_filter=vad_filter,
+                                transcript_path=tree["transcripts"] / "transcript.txt",
+                                segments_json_path=tree["transcripts"] / "segments.json",
+                                segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                                srt_path=tree["transcripts"] / "transcript.srt",
+                                info_path=info_path,
+                            )
+                        else:
+                            segment_count, info = transcribe_audio_stream(
+                                audio_path=audio_path,
+                                model=whisper_model,
+                                language=language,
+                                device=device,
+                                vad_filter=vad_filter,
+                                transcript_path=tree["transcripts"] / "transcript.txt",
+                                segments_json_path=tree["transcripts"] / "segments.json",
+                                segments_jsonl_path=tree["transcripts"] / "transcript.jsonl",
+                                srt_path=tree["transcripts"] / "transcript.srt",
+                            )
 
                 metadata = {
                     "model": whisper_model,
@@ -343,6 +467,9 @@ def run_pipeline(
                 _finish_step(steps, "transcribe", metadata)
                 _save_steps(state_file, steps, run_file)
                 logger.info("Step transcribe complete")
+                _cache_transcripts(cache_root, tree)
+                if "chunk_dir" in locals() and chunk_dir.exists():
+                    shutil.rmtree(chunk_dir, ignore_errors=True)
                 _cleanup_memory("transcribe")
             except Exception as exc:  # noqa: BLE001
                 _fail_step(steps, "transcribe", str(exc))
@@ -361,6 +488,7 @@ def run_pipeline(
                 _finish_step(steps, "cleanup_transcript")
                 _save_steps(state_file, steps, run_file)
                 logger.info("Step cleanup_transcript complete")
+                _cache_transcripts(cache_root, tree)
             except Exception as exc:  # noqa: BLE001
                 _fail_step(steps, "cleanup_transcript", str(exc))
                 _save_steps(state_file, steps, run_file)
@@ -372,7 +500,7 @@ def run_pipeline(
     blueprint_raw = blueprint_dir / "content_blueprint.raw.txt"
     blueprint_outputs = [blueprint_json, blueprint_raw]
 
-    if not _should_skip(steps, "blueprint", blueprint_outputs, force):
+    if (not is_quick or is_offline) and not _should_skip(steps, "blueprint", blueprint_outputs, force):
         logger.info("Running step blueprint")
         _start_step(steps, "blueprint")
         try:
@@ -411,6 +539,9 @@ def run_pipeline(
             _fail_step(steps, "blueprint", str(exc))
             _save_steps(state_file, steps, run_file)
             raise
+    if is_offline:
+        _cleanup_memory("offline")
+        return
 
     drafts_dir = tree["content"] / "drafts"
     drafts_dir.mkdir(parents=True, exist_ok=True)
@@ -422,7 +553,51 @@ def run_pipeline(
 
     drafts_outputs = [drafts_json]
 
-    if not _should_skip(steps, "generate_drafts", drafts_outputs, force):
+    quick_dir = tree["content"] / "quick"
+    quick_json = quick_dir / "quick_bundle.json"
+    if is_quick and not is_offline and not _should_skip(steps, "generate_quick", [quick_json, drafts_json], force):
+        logger.info("Running step generate_quick")
+        _start_step(steps, "generate_quick")
+        try:
+            quick_dir.mkdir(parents=True, exist_ok=True)
+            clean_path = tree["transcripts"] / "clean_transcript.txt"
+            clean_text = clean_path.read_text(encoding="utf-8")
+            raw, bundle = generate_quick_bundle(
+                transcript=clean_text,
+                prompt_path=Path(__file__).parent / "prompts" / "quick_bundle.txt",
+                model=model,
+                temperature=temperature,
+                lang=lang,
+                tone=tone,
+                max_input_chars=min(max_input_chars, 24000),
+            )
+            quick_json.write_text(raw, encoding="utf-8")
+            drafts = DraftsSchema(
+                linkedin_posts=bundle.linkedin_posts,
+                x_threads=bundle.x_threads,
+                blog_outlines=bundle.blog_outlines,
+                ig_stories=bundle.ig_stories,
+            )
+            write_drafts_json(drafts_json, drafts)
+            _finish_step(
+                steps,
+                "generate_quick",
+                {
+                    "model": model,
+                    "temperature": temperature,
+                    "lang": lang,
+                    "tone": tone,
+                    "output": str(quick_json),
+                },
+            )
+            _save_steps(state_file, steps, run_file)
+            logger.info("Step generate_quick complete")
+        except Exception as exc:  # noqa: BLE001
+            _fail_step(steps, "generate_quick", str(exc))
+            _save_steps(state_file, steps, run_file)
+            raise
+
+    if not is_quick and not _should_skip(steps, "generate_drafts", drafts_outputs, force):
         logger.info("Running step generate_drafts")
         _start_step(steps, "generate_drafts")
         try:
@@ -489,7 +664,7 @@ def run_pipeline(
         tree["delivery"] / f"README - Start Here - {client} - {title}.docx",
     ]
 
-    if not _should_skip(steps, "finalize_delivery", finalize_outputs, force):
+    if not is_quick and not _should_skip(steps, "finalize_delivery", finalize_outputs, force):
         logger.info("Running step finalize_delivery")
         _start_step(steps, "finalize_delivery")
         try:

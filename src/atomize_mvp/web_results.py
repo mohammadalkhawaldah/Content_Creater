@@ -30,17 +30,20 @@ def _started_at(job_root: Path) -> datetime | None:
 def _include_path(path: Path, started_at: datetime | None) -> bool:
     if started_at is None:
         return True
+    # Allow small clock/FS timestamp skew so freshly written files are included.
     mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-    return mtime >= started_at
+    return mtime >= (started_at - timedelta(seconds=5))
 
 
 def build_results(out_root: Path, job_root: Path) -> dict:
     delivery = job_root / "04_delivery"
     drafts_path = job_root / "03_content" / "drafts" / "drafts.json"
+    quick_path = job_root / "03_content" / "quick" / "quick_bundle.json"
     manifest_path = delivery / "run_manifest.json"
     started_at = _started_at(job_root)
 
     results = {
+        "summary": None,
         "drafts": {},
         "posters": {},
         "docs": [],
@@ -50,6 +53,21 @@ def build_results(out_root: Path, job_root: Path) -> dict:
 
     if drafts_path.exists() and _include_path(drafts_path, started_at):
         data = json.loads(drafts_path.read_text(encoding="utf-8"))
+        results["drafts"] = {
+            "linkedin": data.get("linkedin_posts", []),
+            "x": data.get("x_threads", []),
+            "blog": data.get("blog_outlines", []),
+            "ig": data.get("ig_stories", []),
+        }
+        if quick_path.exists() and _include_path(quick_path, started_at):
+            try:
+                quick_data = json.loads(quick_path.read_text(encoding="utf-8"))
+                results["summary"] = quick_data.get("summary")
+            except json.JSONDecodeError:
+                pass
+    elif quick_path.exists() and _include_path(quick_path, started_at):
+        data = json.loads(quick_path.read_text(encoding="utf-8"))
+        results["summary"] = data.get("summary")
         results["drafts"] = {
             "linkedin": data.get("linkedin_posts", []),
             "x": data.get("x_threads", []),

@@ -46,6 +46,14 @@ class DraftsSchema(BaseModel):
     ig_stories: list[IGStory]
 
 
+class QuickBundle(BaseModel):
+    summary: str
+    linkedin_posts: conlist(LinkedinPost, min_length=1, max_length=1)
+    x_threads: conlist(XThread, min_length=2, max_length=2)
+    blog_outlines: list[BlogOutline] = Field(default_factory=list)
+    ig_stories: conlist(IGStory, min_length=1, max_length=1)
+
+
 class VisualSection(BaseModel):
     icon: str
     text: str

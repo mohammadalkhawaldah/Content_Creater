@@ -23,7 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--log-level", default="INFO", help="Logging level (default: INFO)")
     default_whisper = os.environ.get("ATOMIZE_WHISPER_MODEL")
     if not default_whisper:
-        default_whisper = "tiny" if os.environ.get("RENDER") else "small"
+        # Favor speed by default on CPU-only setups.
+        default_whisper = "tiny"
     run_parser.add_argument(
         "--whisper-model",
         default=default_whisper,
@@ -93,6 +94,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable premium structured posters export",
     )
+    run_parser.add_argument(
+        "--mode",
+        default="full",
+        choices=["quick", "full"],
+        help="Run mode (quick or full, default: full)",
+    )
 
     web_parser = subparsers.add_parser("web", help="Start Atomize web server")
     web_parser.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
@@ -141,6 +148,7 @@ def main() -> None:
             structured_theme=args.structured_theme,
             structured_only=args.structured_only,
             structured_premium=args.structured_premium,
+            mode=args.mode,
         )
     elif args.command == "web":
         out_root = Path(args.out).expanduser()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -8,7 +9,6 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from atomize_mvp.paths import build_delivery_root
 from atomize_mvp.web_jobs import create_job, get_job_status
 from atomize_mvp.web_models import JobCreateResponse, JobResultsResponse, JobStatusResponse
 from atomize_mvp.web_results import build_results
@@ -71,6 +71,7 @@ def create_job_api(
     model: str = Form("gpt-4o-mini"),
     temperature: float = Form(0.3),
     max_input_chars: int = Form(120000),
+    mode: str = Form("quick" if os.environ.get("RENDER") else "full"),
     linkedin_count: int = Form(2),
     x_count: int = Form(2),
     blog_count: int = Form(2),
@@ -86,7 +87,8 @@ def create_job_api(
     if not _allowed_ext(file.filename or ""):
         raise HTTPException(status_code=400, detail="Unsupported file type.")
 
-    job_root = build_delivery_root(out_root, client, title)
+    job_id = str(uuid.uuid4())
+    job_root = out_root / client / f"{title}__{job_id}"
     source_dir = job_root / "01_source"
     source_dir.mkdir(parents=True, exist_ok=True)
     target_path = source_dir / (file.filename or "upload.bin")
@@ -95,6 +97,14 @@ def create_job_api(
 
     if structured_premium and not structured_posters:
         structured_posters = True
+    if mode.lower() == "quick":
+        linkedin_count = 1
+        x_count = 2
+        blog_count = 0
+        ig_count = 1
+        structured_posters = False
+        structured_premium = False
+        ai_posters = False
 
     config = {
         "whisper_model": whisper_model,
@@ -115,9 +125,10 @@ def create_job_api(
         "structured_count": structured_count,
         "structured_theme": structured_theme,
         "structured_premium": structured_premium,
+        "mode": mode.lower(),
     }
 
-    record = create_job(out_root, client, title, target_path, config)
+    record = create_job(out_root, client, title, target_path, config, job_id=job_id, job_root=job_root)
     return JobCreateResponse(**record)
 
 

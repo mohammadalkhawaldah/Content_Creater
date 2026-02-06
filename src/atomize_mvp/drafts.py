@@ -5,7 +5,14 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from atomize_mvp.llm_client import generate_repair_text, generate_text
-from atomize_mvp.schemas import BlogOutline, DraftsSchema, IGStory, LinkedinPost, XThread
+from atomize_mvp.schemas import (
+    BlogOutline,
+    DraftsSchema,
+    IGStory,
+    LinkedinPost,
+    QuickBundle,
+    XThread,
+)
 
 LINKEDIN_SCHEMA = """[
   {
@@ -42,6 +49,38 @@ IG_SCHEMA = """[
     "slides": ["string", "string", "string"]
   }
 ]"""
+
+QUICK_SCHEMA = """{
+  "summary": "string",
+  "linkedin_posts": [
+    {
+      "id": "LI-01",
+      "hook": "string",
+      "body": "string",
+      "cta": "string",
+      "hashtags": ["string"]
+    }
+  ],
+  "x_threads": [
+    {
+      "id": "X-01",
+      "tweets": ["string", "string", "string"],
+      "closing_cta": "string"
+    },
+    {
+      "id": "X-02",
+      "tweets": ["string", "string", "string"],
+      "closing_cta": "string"
+    }
+  ],
+  "blog_outlines": [],
+  "ig_stories": [
+    {
+      "id": "IG-01",
+      "slides": ["string", "string", "string"]
+    }
+  ]
+}"""
 
 
 def _truncate_text(text: str, max_chars: int) -> str:
@@ -94,6 +133,37 @@ def _repair_json(raw: str, schema: str, model: str, temperature: float) -> str:
         f"Broken output:\n{raw}"
     )
     return generate_repair_text(prompt, model, temperature)
+
+
+def generate_quick_bundle(
+    transcript: str,
+    prompt_path: Path,
+    model: str,
+    temperature: float,
+    lang: str,
+    tone: str,
+    max_input_chars: int,
+) -> tuple[str, QuickBundle]:
+    system_prompt = prompt_path.read_text(encoding="utf-8")
+    system_prompt = system_prompt.replace("{lang}", lang).replace("{tone}", tone)
+    trimmed_transcript = _truncate_text(transcript, max_input_chars)
+    user_prompt = (
+        f"{_lang_hint(lang)}\n"
+        f"Tone: {tone}\n\n"
+        "Transcript:\n"
+        f"{trimmed_transcript}\n"
+    )
+    raw = generate_text(system_prompt, user_prompt, model, temperature)
+    for attempt in range(3):
+        try:
+            data = json.loads(raw)
+            bundle = QuickBundle.model_validate(data)
+            return raw, bundle
+        except Exception:  # noqa: BLE001
+            if attempt >= 2:
+                raise
+            raw = _repair_json(raw, QUICK_SCHEMA, model, temperature)
+    raise RuntimeError("Failed to generate quick bundle.")
 
 
 def _generate_platform(

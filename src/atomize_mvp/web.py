@@ -21,7 +21,13 @@ def main(argv: list[str] | None = None) -> None:
     out_root = Path(args.out).resolve()
     os.environ["ATOMIZE_OUT_ROOT"] = str(out_root)
     app = create_app(out_root)
-    uvicorn.run(app, host=args.host, port=args.port)
+    access_log = os.environ.get("ATOMIZE_ACCESS_LOG", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    uvicorn.run(app, host=args.host, port=args.port, access_log=access_log)
 
 
 if __name__ == "__main__":

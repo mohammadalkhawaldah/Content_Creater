@@ -9,7 +9,7 @@ from typing import Any
 from datetime import datetime, timezone, timedelta
 
 from atomize_mvp.logging_utils import configure_logging
-from atomize_mvp.paths import build_delivery_root, delivery_tree
+from atomize_mvp.paths import delivery_tree
 from atomize_mvp.runner import run_pipeline
 
 
@@ -90,22 +90,49 @@ def _read_steps_status(job_root: Path) -> dict:
         return {}
 
 
-def _infer_progress(steps: dict) -> tuple[str | None, int, bool, bool]:
+def _read_job_meta(job_root: Path) -> dict:
+    job_path = job_root / ".atomize" / "job.json"
+    if job_path.exists():
+        try:
+            return json.loads(job_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    run_path = job_root / ".atomize" / "run.json"
+    if run_path.exists():
+        try:
+            return json.loads(run_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _infer_progress(steps: dict, meta: dict) -> tuple[str | None, int, bool, bool]:
+    mode = (meta.get("mode") or "full").lower()
     order = [
         "init",
         "stage_source",
         "prepare_audio",
         "transcribe",
         "cleanup_transcript",
-        "blueprint",
-        "generate_drafts",
-        "finalize_delivery",
-        "render_cards",
-        "export_posters",
-        "export_structured_posters",
-        "export_structured_posters_premium",
-        "export_infographic_posters",
     ]
+    if mode == "quick":
+        order += [
+            "generate_quick",
+            "render_cards",
+            "export_posters",
+        ]
+    else:
+        order += [
+            "blueprint",
+            "generate_drafts",
+            "finalize_delivery",
+            "render_cards",
+            "export_posters",
+        ]
+        if meta.get("structured_posters"):
+            order.append("export_structured_posters")
+        if meta.get("structured_premium"):
+            order.append("export_structured_posters_premium")
     completed = 0
     current = None
     has_failed = False
@@ -130,10 +157,12 @@ def get_job_status(out_root: Path, job_id: str) -> dict | None:
         if record.get("id") == job_id:
             job_root = Path(record["job_path"])
             steps = _read_steps_status(job_root)
-            current_step, percent, has_running, has_failed = _infer_progress(steps)
+            meta = _read_job_meta(job_root)
+            current_step, percent, has_running, has_failed = _infer_progress(steps, meta)
             record = {**record}
             record["current_step"] = current_step
             record["percent"] = percent
+            record["mode"] = meta.get("mode")
             if record.get("status") == "running":
                 if has_failed:
                     record["status"] = "failed"
@@ -154,9 +183,13 @@ def create_job(
     title: str,
     input_path: Path,
     config: dict[str, Any],
+    job_id: str | None = None,
+    job_root: Path | None = None,
 ) -> dict:
-    job_id = str(uuid.uuid4())
-    job_root = build_delivery_root(out_root, client, title)
+    if job_id is None:
+        job_id = str(uuid.uuid4())
+    if job_root is None:
+        job_root = out_root / client / f"{title}__{job_id}"
     tree = delivery_tree(job_root)
     for path in tree.values():
         if path == job_root:
@@ -178,6 +211,19 @@ def create_job(
         run_data = {}
     run_data.update({"job_id": job_id, "started_at": started_at})
     run_path.write_text(json.dumps(run_data, indent=2, sort_keys=True), encoding="utf-8")
+    job_meta_path = job_root / ".atomize" / "job.json"
+    job_meta = {
+        "job_id": job_id,
+        "client": client,
+        "title": title,
+        "started_at": started_at,
+        "mode": config.get("mode", "full"),
+        "structured_posters": config.get("structured_posters"),
+        "structured_premium": config.get("structured_premium"),
+    }
+    job_meta_path.write_text(
+        json.dumps(job_meta, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
     record = {
         "id": job_id,
@@ -188,6 +234,7 @@ def create_job(
         "status": "queued",
         "job_path": str(job_root),
         "input_path": str(input_path),
+        "mode": config.get("mode", "full"),
     }
     append_registry(out_root, record)
     thread = threading.Thread(
@@ -231,6 +278,7 @@ def _run_job(out_root: Path, job_id: str, config: dict[str, Any]) -> None:
             structured_theme=config["structured_theme"],
             structured_only=False,
             structured_premium=config["structured_premium"],
+            mode=config.get("mode", "full"),
         )
         _update_registry(
             out_root,

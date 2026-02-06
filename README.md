@@ -37,10 +37,14 @@ http://127.0.0.1:8000
 
 The UI lets you upload audio/video/text, configure counts/tone/language, run a job, view results, and download a ZIP.
 
+### Quick vs Full
+- **Quick**: fast outputs for preview (summary + small set of posts + basic posters). Skips premium/structured exports.
+- **Full**: runs the complete pipeline and produces all outputs.
+
 ### Results Location
 All outputs are stored under:
 ```
-out/<client>/<title>/04_delivery/
+out/<client>/<title>__<job_id>/04_delivery/
 ```
 
 ### Troubleshooting (Windows)
